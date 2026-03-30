@@ -17,10 +17,12 @@ import (
 
 var (
 	v2rayConfigPath string
+	panelDomain     string
 )
 
 func init() {
 	flag.StringVar(&v2rayConfigPath, "v2ray-config", "/usr/local/etc/v2ray/config.json", "v2ray jsonV4 config path")
+	flag.StringVar(&panelDomain, "paneldomain", "", "panel domain for DNS (required)")
 }
 
 type Patcher struct {
@@ -40,10 +42,23 @@ type Patcher struct {
 	lastFallbackTag string
 	newObservers    []gjson.Result
 	newRoutingRules []gjson.Result
+
+	directDomains       []string // "domain:xxx" 或 "full:a.b.c"
+	directIPs           []string
+	panelDomainFmt      string // "domain:xxx" 或 "full:a.b.c"
+	directIPRuleIdx     int    // DIRECT-IP 规则在 newRoutingRules 中的索引, -1 表示不存在
+	directDomainRuleIdx int    // DIRECT-DOMAIN 规则在 newRoutingRules 中的索引, -1 表示不存在
+}
+
+func GetPanelDomain() string {
+	return panelDomain
 }
 
 func NewPatcher() *Patcher {
-	p := &Patcher{}
+	p := &Patcher{
+		directIPRuleIdx:     -1,
+		directDomainRuleIdx: -1,
+	}
 
 	return p
 }
@@ -73,6 +88,11 @@ func (p *Patcher) ApplyPatchFromSubscription(sub *Subscription) (err error) {
 	p.Output = make(JSONObject, len(p.V2RayConf))
 	copy(p.Output, p.V2RayConf)
 
+	// 收集订阅中的服务器地址
+	p.directDomains, p.directIPs = sub.CollectServerAddresses()
+	p.panelDomainFmt = FormatDomainWithPrefix(panelDomain)
+	slog.Info(fmt.Sprintf("Collected %d direct domains and %d direct IPs from subscription", len(p.directDomains), len(p.directIPs)))
+
 	// 切出来dns route关注的outboundTags或者balancerTags
 	if err = p.retrieveDnsRtTags(); err != nil {
 		return
@@ -100,6 +120,9 @@ func (p *Patcher) ApplyPatchFromSubscription(sub *Subscription) (err error) {
 	if err = p.prepareOutbounds(); err != nil {
 		return
 	}
+	if err = p.prepareDirectConnectRules(); err != nil {
+		return
+	}
 	if err = p.prepareDnsRtConnTrackRoutingRules(); err != nil {
 		return
 	}
@@ -125,13 +148,13 @@ func (p *Patcher) retrieveDnsRtTags() error {
 	}{
 		{
 			"outboundTags", func(tag ...string) {
-			p.dnsRtOutbounds = append(p.dnsRtOutbounds, tag...)
-		},
+				p.dnsRtOutbounds = append(p.dnsRtOutbounds, tag...)
+			},
 		},
 		{
 			"balancerTags", func(tag ...string) {
-			p.dnsRtBalancers = append(p.dnsRtBalancers, tag...)
-		},
+				p.dnsRtBalancers = append(p.dnsRtBalancers, tag...)
+			},
 		},
 	} {
 		tags := dnsCircuit.Get(f.Field)
@@ -282,6 +305,10 @@ const (
 	routingRuleConnTrackSrcPrefix  = "dynamic-ipset:dnscircuit-conntrack-src-"
 	routingRuleConnTrackDstPrefix  = "dynamic-ipset:dnscircuit-conntrack-dest-"
 	routingRuleConnTrackDstDefault = "dynamic-ipset:dnscircuit-dest-default"
+
+	autoGenDirectIP     = "Auto-Generated DIRECT-IP"
+	autoGenDirectDomain = "Auto-Generated DIRECT-DOMAIN"
+	autoGenPanelDomain  = "Auto-Generated PANEL-DOMAIN"
 )
 
 func (p *Patcher) retrieveRoutingRules() error {
@@ -298,6 +325,18 @@ func (p *Patcher) retrieveRoutingRules() error {
 	)
 	rules.ForEach(func(idx, rule gjson.Result) (next bool) {
 		next = true
+		// 检测 DIRECT-IP 和 DIRECT-DOMAIN 标记
+		if strings.Contains(rule.Raw, autoGenDirectIP) {
+			p.directIPRuleIdx = len(newRules)
+			newRules = append(newRules, rule)
+			return
+		}
+		if strings.Contains(rule.Raw, autoGenDirectDomain) {
+			p.directDomainRuleIdx = len(newRules)
+			newRules = append(newRules, rule)
+			return
+		}
+
 		rType := rule.Get("type").String()
 		if rType != "field" {
 			newRules = append(newRules, rule)
@@ -331,6 +370,65 @@ func (p *Patcher) retrieveRoutingRules() error {
 	p.newRoutingRules = newRules
 	slog.Info(fmt.Sprintf("Processing routingRules ... found&removed %d auto-generated and preserve %d customized routingRules",
 		removedCnt, len(p.newRoutingRules)))
+	return nil
+}
+
+func (p *Patcher) prepareDirectConnectRules() error {
+	hasIPs := len(p.directIPs) > 0
+	hasIPRule := p.directIPRuleIdx >= 0
+	hasDomainRule := p.directDomainRuleIdx >= 0
+
+	// 如果有 IP 但没有 IP 规则，需要插入新规则
+	if hasIPs && !hasIPRule {
+		// 查找广告拦截规则（包含 geosite:category-ads-all）
+		adsRuleIdx := -1
+		for i, rule := range p.newRoutingRules {
+			if strings.Contains(rule.Raw, "geosite:category-ads-all") {
+				adsRuleIdx = i
+				break
+			}
+		}
+
+		// 确定插入位置
+		insertIdx := 0
+		if hasDomainRule {
+			// 优先在 DIRECT-DOMAIN 规则前面插入
+			insertIdx = p.directDomainRuleIdx
+		} else if adsRuleIdx >= 0 {
+			// 否则在广告拦截规则后面插入
+			insertIdx = adsRuleIdx + 1
+		}
+
+		// 创建新的 DIRECT-IP 规则
+		newIPRule := gjson.Parse(`      {
+        "type": "field",
+        "ip": [
+          "placeholder" // ` + autoGenDirectIP + `
+        ],
+        "outboundTag": "direct"
+      }`)
+
+		// 插入规则
+		p.newRoutingRules = slices.Insert(p.newRoutingRules, insertIdx, newIPRule)
+		p.directIPRuleIdx = insertIdx
+		// 如果 DIRECT-DOMAIN 规则在后面，需要更新其索引
+		if hasDomainRule && p.directDomainRuleIdx >= insertIdx {
+			p.directDomainRuleIdx++
+		}
+		slog.Info(fmt.Sprintf("Inserted new DIRECT-IP routing rule at index %d", insertIdx))
+	}
+
+	// 如果没有 IP 但有 IP 规则，需要删除规则
+	if !hasIPs && hasIPRule {
+		p.newRoutingRules = slices.Delete(p.newRoutingRules, p.directIPRuleIdx, p.directIPRuleIdx+1)
+		// 更新 DIRECT-DOMAIN 规则索引
+		if hasDomainRule && p.directDomainRuleIdx > p.directIPRuleIdx {
+			p.directDomainRuleIdx--
+		}
+		p.directIPRuleIdx = -1
+		slog.Info("Removed DIRECT-IP routing rule (no IPs in subscription)")
+	}
+
 	return nil
 }
 
@@ -564,6 +662,13 @@ func (p *Patcher) writeOutPatchedResult() (err error) {
 			return
 		}
 	}
+
+	// 文本替换 Auto-Generated 标记的行
+	p.Output, err = p.patchAutoGeneratedLines()
+	if err != nil {
+		return
+	}
+
 	err = os.WriteFile(v2rayConfigPath, p.Output, 0644)
 	if err != nil {
 		slog.Error(fmt.Sprintf("Failed to write out patched file: %v", err))
@@ -571,6 +676,88 @@ func (p *Patcher) writeOutPatchedResult() (err error) {
 		slog.Info(fmt.Sprintf("Successfully wrote out patched file: %s", v2rayConfigPath))
 	}
 	return
+}
+
+func (p *Patcher) patchAutoGeneratedLines() ([]byte, error) {
+	lines := strings.Split(string(p.Output), "\n")
+	var result []string
+
+	for i := 0; i < len(lines); i++ {
+		line := lines[i]
+
+		if strings.Contains(line, autoGenDirectDomain) {
+			// 收集并移除所有连续的 DIRECT-DOMAIN 行
+			for i < len(lines) && strings.Contains(lines[i], autoGenDirectDomain) {
+				i++
+			}
+			// 检查下一行是否为 ] 结尾（用于逗号处理）
+			nextLineIsClose := i < len(lines) && strings.Contains(strings.TrimSpace(lines[i]), "]")
+			// 获取缩进
+			indent := getIndent(line)
+			// 生成新行
+			for j, d := range p.directDomains {
+				needComma := true
+				if j == len(p.directDomains)-1 && nextLineIsClose {
+					needComma = false
+				}
+				comma := ""
+				if needComma {
+					comma = ","
+				}
+				result = append(result, fmt.Sprintf(`%s"%s"%s // %s`, indent, d, comma, autoGenDirectDomain))
+			}
+			// 当前行（已经 i++ 到了下一行）需要被处理，回退
+			i--
+			continue
+		}
+
+		if strings.Contains(line, autoGenPanelDomain) {
+			// 收集并移除所有连续的 PANEL-DOMAIN 行
+			for i < len(lines) && strings.Contains(lines[i], autoGenPanelDomain) {
+				i++
+			}
+			nextLineIsClose := i < len(lines) && strings.Contains(strings.TrimSpace(lines[i]), "]")
+			indent := getIndent(line)
+			comma := ""
+			if !nextLineIsClose {
+				comma = ","
+			}
+			result = append(result, fmt.Sprintf(`%s"%s"%s // %s`, indent, p.panelDomainFmt, comma, autoGenPanelDomain))
+			i--
+			continue
+		}
+
+		if strings.Contains(line, autoGenDirectIP) {
+			// 收集并移除所有连续的 DIRECT-IP 行
+			for i < len(lines) && strings.Contains(lines[i], autoGenDirectIP) {
+				i++
+			}
+			nextLineIsClose := i < len(lines) && strings.Contains(strings.TrimSpace(lines[i]), "]")
+			indent := getIndent(line)
+			for j, ip := range p.directIPs {
+				needComma := true
+				if j == len(p.directIPs)-1 && nextLineIsClose {
+					needComma = false
+				}
+				comma := ""
+				if needComma {
+					comma = ","
+				}
+				result = append(result, fmt.Sprintf(`%s"%s"%s // %s`, indent, ip, comma, autoGenDirectIP))
+			}
+			i--
+			continue
+		}
+
+		result = append(result, line)
+	}
+
+	return []byte(strings.Join(result, "\n")), nil
+}
+
+func getIndent(line string) string {
+	trimmed := strings.TrimLeft(line, " \t")
+	return line[:len(line)-len(trimmed)]
 }
 
 func (p *Patcher) toRawBytes(rs []gjson.Result) []byte {

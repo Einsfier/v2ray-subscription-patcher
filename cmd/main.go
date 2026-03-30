@@ -19,6 +19,9 @@ func main() {
 	if len(subAddr) <= 0 {
 		panic("url address of v2ray subscription is empty")
 	}
+	if len(patcher.GetPanelDomain()) <= 0 {
+		panic("paneldomain is required and cannot be empty")
+	}
 	s := patcher.NewSubscription(subAddr)
 	err := s.GetSubscription()
 	if err != nil {

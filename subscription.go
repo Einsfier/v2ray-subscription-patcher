@@ -8,10 +8,13 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
+
+	"golang.org/x/net/publicsuffix"
 )
 
 type Subscription struct {
@@ -109,4 +112,68 @@ func (m *SubItem) parseItem() error {
 	}
 
 	return nil
+}
+
+// CollectServerAddresses 从订阅中收集所有服务器地址，区分域名和 IP
+func (s *Subscription) CollectServerAddresses() (domains []string, ips []string) {
+	domainSet := make(map[string]struct{})
+	ipSet := make(map[string]struct{})
+
+	for _, item := range s.SubItems {
+		if item.VmessConf == nil {
+			continue
+		}
+		addr := item.VmessConf.Addr
+		if len(addr) == 0 {
+			continue
+		}
+
+		// 判断是否为 IP
+		if net.ParseIP(addr) != nil {
+			ipSet[addr] = struct{}{}
+			continue
+		}
+
+		// 是域名，判断是否为子域名
+		tldPlus1, err := publicsuffix.EffectiveTLDPlusOne(addr)
+		if err != nil {
+			slog.Warn(fmt.Sprintf("invalid domain found: %s", addr))
+			continue
+		}
+
+		if tldPlus1 == addr {
+			// 顶级域名+1，使用 domain: 前缀
+			domainSet["domain:"+addr] = struct{}{}
+		} else {
+			// 子域名，使用 full: 前缀
+			domainSet["full:"+addr] = struct{}{}
+		}
+	}
+
+	// 转换为切片
+	domains = make([]string, 0, len(domainSet))
+	for d := range domainSet {
+		domains = append(domains, d)
+	}
+	ips = make([]string, 0, len(ipSet))
+	for ip := range ipSet {
+		ips = append(ips, ip)
+	}
+
+	return domains, ips
+}
+
+// FormatDomainWithPrefix 根据域名是否为子域名，生成 "domain:xxx" 或 "full:xxx" 格式
+func FormatDomainWithPrefix(addr string) string {
+	if net.ParseIP(addr) != nil {
+		return addr
+	}
+	tldPlus1, err := publicsuffix.EffectiveTLDPlusOne(addr)
+	if err != nil {
+		return "domain:" + addr
+	}
+	if tldPlus1 == addr {
+		return "domain:" + addr
+	}
+	return "full:" + addr
 }
