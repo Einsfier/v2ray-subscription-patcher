@@ -458,7 +458,8 @@ func (p *Patcher) prepareObservatoryAndBalancers() error {
         "settings": {
           "subjectSelector": [%s],
           "probeURL": "https://www.cloudflarestatus.com/api/v2/status.json",
-          "probeInterval": "10s"
+          "probeInterval": "10s",
+          "enableConcurrency": true
         }
       }`, balancerTag, autoSetupObserverPrefix+regionSuffix, outBoundSelector)))
 		// balancers
@@ -524,7 +525,7 @@ func (p *Patcher) prepareOutbounds() (err error) {
           "users": [
             {
               "id": "%s",
-              "alterId": %v
+              "security": %v
             }
           ]
         }]
@@ -546,7 +547,7 @@ func (p *Patcher) prepareOutbounds() (err error) {
       }
     }`, autoSetupOutboundPrefix+m[0]+":"+serverName+fmt.Sprintf("-p%d", subItem.VmessConf.Port),
 					subId,
-					subItem.VmessConf.Addr, subItem.VmessConf.Port, subItem.VmessConf.UUID, subItem.VmessConf.AlterId)))
+					subItem.VmessConf.Addr, subItem.VmessConf.Port, subItem.VmessConf.UUID, "auto")))
 		}
 	}
 	if addedCnt > 0 {
