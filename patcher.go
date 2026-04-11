@@ -453,13 +453,17 @@ func (p *Patcher) prepareObservatoryAndBalancers() error {
 		// observatory
 		p.newObservers = append(p.newObservers,
 			gjson.Parse(fmt.Sprintf(`      { // Auto-generated from dnsCircuit.balancerTag = %s
-        "type": "default",
+        "type": "burst",
         "tag": "%s",
         "settings": {
           "subjectSelector": [%s],
-          "probeURL": "https://www.cloudflarestatus.com/api/v2/status.json",
-          "probeInterval": "10s",
-          "enableConcurrency": true
+          "pingConfig": {
+            "destination": "https://www.cloudflarestatus.com/api/v2/status.json",
+            "interval": "10s",
+            "sampling": 10,
+            "timeout": "5s",
+            "httpMethod": "GET"
+          }
         }
       }`, balancerTag, autoSetupObserverPrefix+regionSuffix, outBoundSelector)))
 		// balancers
@@ -473,9 +477,14 @@ func (p *Patcher) prepareObservatoryAndBalancers() error {
         "tag": "%s",
         "selector": [%s],
         "strategy": {
-          "type": "leastping",
+          "type": "leastload",
           "settings": {
-            "observerTag": "%s"
+            "observerTag": "%s",
+            "expected": 2,
+            "maxRTT": "3s",
+            "tolerance": 0.1,
+            "baselines": ["100ms", "250ms", "500ms", "1s"],
+            "costs": [{"match":"extreme","value":0.5}]
           }
         },
         "fallbackTag": "%s"
