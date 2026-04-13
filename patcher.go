@@ -148,13 +148,13 @@ func (p *Patcher) retrieveDnsRtTags() error {
 	}{
 		{
 			"outboundTags", func(tag ...string) {
-				p.dnsRtOutbounds = append(p.dnsRtOutbounds, tag...)
-			},
+			p.dnsRtOutbounds = append(p.dnsRtOutbounds, tag...)
+		},
 		},
 		{
 			"balancerTags", func(tag ...string) {
-				p.dnsRtBalancers = append(p.dnsRtBalancers, tag...)
-			},
+			p.dnsRtBalancers = append(p.dnsRtBalancers, tag...)
+		},
 		},
 	} {
 		tags := dnsCircuit.Get(f.Field)
@@ -534,7 +534,7 @@ func (p *Patcher) prepareOutbounds() (err error) {
           "users": [
             {
               "id": "%s",
-              "security": %v
+              "security": %q
             }
           ]
         }]
