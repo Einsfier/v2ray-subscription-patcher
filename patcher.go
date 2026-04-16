@@ -28,8 +28,8 @@ func init() {
 type Patcher struct {
 	V2RayConf JSONObject
 	Output    JSONObject
-	// addr:port
-	VmessServers map[string]*SubItem
+	// addr:port -> SubItem (all protocols)
+	ProxyServers map[string]*SubItem
 
 	dnsRtOutbounds          []string
 	dnsRtBalancers          []string
@@ -78,12 +78,12 @@ func (p *Patcher) ReadPrevConfig() error {
 }
 
 func (p *Patcher) ApplyPatchFromSubscription(sub *Subscription) (err error) {
-	p.VmessServers = make(map[string]*SubItem, len(sub.SubItems))
+	p.ProxyServers = make(map[string]*SubItem, len(sub.SubItems))
 	for _, item := range sub.SubItems {
-		if item.VmessConf == nil {
+		if item.Protocol() == "" {
 			continue
 		}
-		p.VmessServers[item.ID()] = item
+		p.ProxyServers[item.ID()] = item
 	}
 	p.Output = make(JSONObject, len(p.V2RayConf))
 	copy(p.Output, p.V2RayConf)
@@ -507,24 +507,22 @@ func (p *Patcher) prepareOutbounds() (err error) {
 	var (
 		addedCnt int
 	)
-	for subId, subItem := range p.VmessServers {
-		//tldPlus1, err := publicsuffix.EffectiveTLDPlusOne(subItem.VmessConf.Addr)
-		//if err != nil {
-		//	slog.Warn(fmt.Sprintf("invalid domain found in subscription result: %s", string(subItem.VmessRaw)))
-		//	continue
-		//}
-		//itemAddrId := strings.TrimSuffix(subItem.VmessConf.Addr, tldPlus1)
-		//itemAddrId = strings.TrimSuffix(itemAddrId, ".")
-		serverName := strings.ToLower(strings.ReplaceAll(suffixTrimer.ReplaceAllString(subItem.VmessConf.ServerName, ""), " ", "-"))
+	for subId, subItem := range p.ProxyServers {
+		serverName := strings.ToLower(strings.ReplaceAll(suffixTrimer.ReplaceAllString(subItem.ServerNameLabel(), ""), " ", "-"))
 		if m := rgx.FindAllString(serverName, -1); len(m) > 0 {
 			if len(m) > 1 {
-				slog.Warn(fmt.Sprintf("Vmess server %s matches more than one pattern from dnsCircuit balancerTags/outboundTags(%v). skipped.",
+				slog.Warn(fmt.Sprintf("Server %s matches more than one pattern from dnsCircuit balancerTags/outboundTags(%v). skipped.",
 					subId, m))
 				continue
 			}
-			addedCnt++
-			p.newOutbounds = append(p.newOutbounds,
-				gjson.Parse(fmt.Sprintf(`    {
+			tag := autoSetupOutboundPrefix + m[0] + ":" + serverName
+
+			var outboundJSON string
+			switch subItem.Protocol() {
+			case "vmess":
+				c := subItem.VmessConf
+				tag += fmt.Sprintf("-p%d", c.Port)
+				outboundJSON = fmt.Sprintf(`    {
       "tag": "%s", // Auto-Generated from %s
       "protocol": "vmess",
       "settings": {
@@ -554,9 +552,87 @@ func (p *Patcher) prepareOutbounds() (err error) {
       "mux": {
         "enabled": false
       }
-    }`, autoSetupOutboundPrefix+m[0]+":"+serverName+fmt.Sprintf("-p%d", subItem.VmessConf.Port),
-					subId,
-					subItem.VmessConf.Addr, subItem.VmessConf.Port, subItem.VmessConf.UUID, "auto")))
+    }`, tag, subId, c.Addr, c.Port, c.UUID, "auto")
+
+			case "vless":
+				c := subItem.VlessConf
+				tag += fmt.Sprintf("-p%d", c.Port)
+				sni := c.SNI
+				if sni == "" {
+					sni = c.RealitySNI
+				}
+				fp := c.Fingerprint
+				if fp == "" {
+					fp = "chrome"
+				}
+				outboundJSON = fmt.Sprintf(`    {
+      "tag": "%s", // Auto-Generated from %s
+      "protocol": "vless",
+      "settings": {
+        "vnext": [{
+          "address": "%s",
+          "port": %d,
+          "users": [
+            {
+              "id": "%s",
+              "encryption": "none",
+              "flow": "%s"
+            }
+          ]
+        }]
+      },
+      "streamSettings": {
+        "network": "%s",
+        "security": "%s",
+        "realitySettings": {
+          "fingerprint": "%s",
+          "serverName": "%s",
+          "publicKey": "%s",
+          "spiderX": "%s",
+          "shortId": "%s"
+        },
+        "sockopt": {
+          "mark": 255
+        }
+      }
+    }`, tag, subId, c.Addr, c.Port, c.UUID, c.Flow,
+					c.Network, c.Security, fp, sni, c.PublicKey, c.SpiderX, c.ShortId)
+
+			case "hysteria2":
+				c := subItem.Hysteria2Conf
+				tag += fmt.Sprintf("-p%d", c.Port)
+				insecureStr := "false"
+				if c.Insecure {
+					insecureStr = "true"
+				}
+				outboundJSON = fmt.Sprintf(`    {
+      "tag": "%s", // Auto-Generated from %s
+      "protocol": "hysteria",
+      "settings": {
+        "version": 2,
+        "address": "%s",
+        "port": %d
+      },
+      "hysteriaSettings": {
+        "version": 2,
+        "auth": "%s",
+        "masquerade": {
+          "insecure": %s
+        }
+      },
+      "streamSettings": {
+        "sockopt": {
+          "mark": 255
+        }
+      }
+    }`, tag, subId, c.Addr, c.Port, c.Auth, insecureStr)
+
+			default:
+				continue
+			}
+
+			addedCnt++
+			p.newOutbounds = append(p.newOutbounds, gjson.Parse(outboundJSON))
 		}
 	}
 	if addedCnt > 0 {

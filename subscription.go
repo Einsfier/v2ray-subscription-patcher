@@ -28,10 +28,12 @@ type JSONObject json.RawMessage
 type Base64Resp []byte
 
 type SubItem struct {
-	Line      []byte
-	Parsed    *url.URL
-	VmessRaw  JSONObject
-	VmessConf *VmessConfig
+	Line          []byte
+	Parsed        *url.URL
+	VmessRaw      JSONObject
+	VmessConf     *VmessConfig
+	VlessConf     *VlessConfig
+	Hysteria2Conf *Hysteria2Config
 }
 
 func NewSubscription(addr string) *Subscription {
@@ -84,10 +86,50 @@ func (s *Subscription) ParseItems() error {
 
 func (m *SubItem) ID() string {
 	switch {
-	case m.VmessRaw != nil:
+	case m.VmessConf != nil:
 		return m.VmessConf.Addr + ":" + strconv.Itoa(m.VmessConf.Port)
+	case m.VlessConf != nil:
+		return m.VlessConf.Addr + ":" + strconv.Itoa(m.VlessConf.Port)
+	case m.Hysteria2Conf != nil:
+		return m.Hysteria2Conf.Addr + ":" + strconv.Itoa(m.Hysteria2Conf.Port)
 	}
 	return string(m.Line)
+}
+
+func (m *SubItem) ServerAddr() string {
+	switch {
+	case m.VmessConf != nil:
+		return m.VmessConf.Addr
+	case m.VlessConf != nil:
+		return m.VlessConf.Addr
+	case m.Hysteria2Conf != nil:
+		return m.Hysteria2Conf.Addr
+	}
+	return ""
+}
+
+func (m *SubItem) ServerNameLabel() string {
+	switch {
+	case m.VmessConf != nil:
+		return m.VmessConf.ServerName
+	case m.VlessConf != nil:
+		return m.VlessConf.ServerName
+	case m.Hysteria2Conf != nil:
+		return m.Hysteria2Conf.ServerName
+	}
+	return ""
+}
+
+func (m *SubItem) Protocol() string {
+	switch {
+	case m.VmessConf != nil:
+		return "vmess"
+	case m.VlessConf != nil:
+		return "vless"
+	case m.Hysteria2Conf != nil:
+		return "hysteria2"
+	}
+	return ""
 }
 
 func (m *SubItem) parseItem() error {
@@ -96,7 +138,8 @@ func (m *SubItem) parseItem() error {
 		return err
 	}
 	m.Parsed = u
-	if strings.EqualFold(m.Parsed.Scheme, "vmess") {
+	switch strings.ToLower(m.Parsed.Scheme) {
+	case "vmess":
 		// vmess://
 		vmessPayload := m.Line[5+3:]
 		buf := make([]byte, base64.StdEncoding.DecodedLen(len(vmessPayload)))
@@ -106,6 +149,16 @@ func (m *SubItem) parseItem() error {
 		}
 		m.VmessRaw = buf[:n]
 		err = m.RetrieveVmessConf()
+		if err != nil {
+			return err
+		}
+	case "vless":
+		err = m.RetrieveVlessConf()
+		if err != nil {
+			return err
+		}
+	case "hysteria2", "hy2":
+		err = m.RetrieveHysteria2Conf()
 		if err != nil {
 			return err
 		}
@@ -120,10 +173,7 @@ func (s *Subscription) CollectServerAddresses() (domains []string, ips []string)
 	ipSet := make(map[string]struct{})
 
 	for _, item := range s.SubItems {
-		if item.VmessConf == nil {
-			continue
-		}
-		addr := item.VmessConf.Addr
+		addr := item.ServerAddr()
 		if len(addr) == 0 {
 			continue
 		}
