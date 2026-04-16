@@ -459,7 +459,7 @@ func (p *Patcher) prepareObservatoryAndBalancers() error {
           "subjectSelector": [%s],
           "pingConfig": {
             "destination": "https://www.cloudflarestatus.com/api/v2/status.json",
-            "interval": "300s",
+            "interval": "1m",
             "sampling": 20,
             "timeout": "5s",
             "httpMethod": "GET"
