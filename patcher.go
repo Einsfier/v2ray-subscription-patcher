@@ -482,7 +482,7 @@ func (p *Patcher) prepareObservatoryAndBalancers() error {
             "observerTag": "%s",
             "expected": 3,
             "maxRTT": "3s",
-            "tolerance": 0.1,
+            "tolerance": 0.15, // 容忍节点探测百分之15失败率
             "baselines": ["100ms", "300ms", "600ms", "1s"],
             "costs": [{"match":"extreme","value":0.8}]
           }
