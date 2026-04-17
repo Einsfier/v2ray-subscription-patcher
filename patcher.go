@@ -459,7 +459,7 @@ func (p *Patcher) prepareObservatoryAndBalancers() error {
           "subjectSelector": [%s],
           "pingConfig": {
             "destination": "https://www.cloudflarestatus.com/api/v2/status.json",
-            "interval": "1m",
+            "interval": "15s",
             "sampling": 20,
             "timeout": "5s",
             "httpMethod": "GET"
@@ -480,11 +480,11 @@ func (p *Patcher) prepareObservatoryAndBalancers() error {
           "type": "leastload",
           "settings": {
             "observerTag": "%s",
-            "expected": 2,
-            "maxRTT": "3s",
+            "expected": 3,
+            "maxRTT": "4s",
             "tolerance": 0.1,
-            "baselines": ["100ms", "250ms", "500ms", "1s"],
-            "costs": [{"match":"extreme","value":0.5}]
+            // "baselines": ["100ms", "300ms", "600ms", "1s"],
+            "costs": [{"match":"extreme","value":0.8}]
           }
         },
         "fallbackTag": "%s"
