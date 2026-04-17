@@ -483,7 +483,7 @@ func (p *Patcher) prepareObservatoryAndBalancers() error {
             "expected": 3,
             "maxRTT": "4s",
             "tolerance": 0.1,
-            // "baselines": ["100ms", "300ms", "600ms", "1s"],
+            "baselines": ["100ms", "300ms", "600ms", "1s"],
             "costs": [{"match":"extreme","value":0.8}]
           }
         },
