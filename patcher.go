@@ -481,7 +481,7 @@ func (p *Patcher) prepareObservatoryAndBalancers() error {
           "settings": {
             "observerTag": "%s",
             "expected": 3,
-            "maxRTT": "4s",
+            "maxRTT": "3s",
             "tolerance": 0.1,
             "baselines": ["100ms", "300ms", "600ms", "1s"],
             "costs": [{"match":"extreme","value":0.8}]
