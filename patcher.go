@@ -616,6 +616,7 @@ func (p *Patcher) prepareOutbounds() (err error) {
         "port": %d
       },
       "streamSettings": {
+        "network": "hysteria",
         "security": "tls",
         "tlsSettings": {
           "serverName": "%s",
