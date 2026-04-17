@@ -546,6 +546,7 @@ func (p *Patcher) prepareOutbounds() (err error) {
         },
         "security": "none",
         "sockopt": {
+          "domainStrategy": "UseIP",
           "mark": 255
         }
       },
@@ -592,6 +593,7 @@ func (p *Patcher) prepareOutbounds() (err error) {
           "shortId": "%s"
         },
         "sockopt": {
+          "domainStrategy": "UseIP",
           "mark": 255
         }
       }
@@ -622,6 +624,7 @@ func (p *Patcher) prepareOutbounds() (err error) {
       },
       "streamSettings": {
         "sockopt": {
+          "domainStrategy": "UseIP",
           "mark": 255
         }
       }
