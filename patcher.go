@@ -615,20 +615,22 @@ func (p *Patcher) prepareOutbounds() (err error) {
         "address": "%s",
         "port": %d
       },
-      "hysteriaSettings": {
-        "version": 2,
-        "auth": "%s",
-        "masquerade": {
-          "insecure": %s
-        }
-      },
       "streamSettings": {
+        "security": "tls",
+        "tlsSettings": {
+          "serverName": "%s",
+          "allowInsecure": %s
+        },
+        "hysteriaSettings": {
+          "version": 2,
+          "auth": "%s"
+        },
         "sockopt": {
           "domainStrategy": "UseIP",
           "mark": 255
         }
       }
-    }`, tag, subId, c.Addr, c.Port, c.Auth, insecureStr)
+    }`, tag, subId, c.Addr, c.Port, c.SNI, insecureStr, c.Auth)
 
 			default:
 				continue
