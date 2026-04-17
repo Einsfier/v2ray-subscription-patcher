@@ -619,7 +619,8 @@ func (p *Patcher) prepareOutbounds() (err error) {
         "security": "tls",
         "tlsSettings": {
           "serverName": "%s",
-          "allowInsecure": %s
+          "allowInsecure": %s,
+          "alpn": ["h3"]
         },
         "hysteriaSettings": {
           "version": 2,
