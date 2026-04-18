@@ -596,6 +596,9 @@ func (p *Patcher) prepareOutbounds() (err error) {
           "domainStrategy": "UseIP",
           "mark": 255
         }
+      },
+      "mux": {
+        "enabled": false
       }
     }`, tag, subId, c.Addr, c.Port, c.UUID, c.Flow,
 					c.Network, c.Security, fp, sni, c.PublicKey, c.SpiderX, c.ShortId)
@@ -631,6 +634,9 @@ func (p *Patcher) prepareOutbounds() (err error) {
           "domainStrategy": "UseIP",
           "mark": 255
         }
+      },
+      "mux": {
+        "enabled": false
       }
     }`, tag, subId, c.Addr, c.Port, c.SNI, insecureStr, c.Auth)
 
