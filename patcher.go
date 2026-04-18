@@ -458,11 +458,11 @@ func (p *Patcher) prepareObservatoryAndBalancers() error {
         "settings": {
           "subjectSelector": [%s],
           "pingConfig": {
-            "destination": "https://www.cloudflarestatus.com/api/v2/status.json",
+            "destination": "https://www.gstatic.com/generate_204",
             "interval": "15s",
             "sampling": 20,
-            "timeout": "5s",
-            "httpMethod": "GET"
+            // "httpMethod": "GET",
+            "timeout": "5s"
           }
         }
       }`, balancerTag, autoSetupObserverPrefix+regionSuffix, outBoundSelector)))
