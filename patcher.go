@@ -503,39 +503,36 @@ func (p *Patcher) prepareObservatoryAndBalancers() error {
 var suffixTrimer = regexp.MustCompile(`\s*\([^)]*\)\s*`)
 
 func (p *Patcher) prepareOutbounds() (err error) {
-	var allSuffix []string
-	antiSuffix := make(map[string]*regexp.Regexp)
+	antiSuffix := make(map[*regexp.Regexp]*regexp.Regexp)
 	for _, rsf := range p.dnsRtAllRegionSuffixSlc {
 		for _, one := range strings.Split(rsf, "|") {
 			if idx := strings.Index(one, "!"); idx != -1 && idx+1 <= len(one)-1 {
-				allSuffix = append(allSuffix, one[:idx])
-				antiSuffix[one[:idx]] = regexp.MustCompile(one[idx+1:])
+				antiSuffix[regexp.MustCompile(one[:idx])] = regexp.MustCompile(one[idx+1:])
 			} else {
-				allSuffix = append(allSuffix, one)
+				antiSuffix[regexp.MustCompile(one)] = nil
 			}
 		}
 	}
 
-	rgx, err := regexp.Compile(strings.Join(allSuffix, "|"))
-	if err != nil {
-		return fmt.Errorf("failed to complie outbound matcher rgx: %w", err)
-	}
 	var (
 		addedCnt int
 	)
 	for subId, subItem := range p.ProxyServers {
 		serverName := strings.ToLower(strings.ReplaceAll(suffixTrimer.ReplaceAllString(subItem.ServerNameLabel(), ""), " ", "-"))
-		if m := rgx.FindAllString(serverName, -1); len(m) > 0 {
+		var m string
+		for mt, anti := range antiSuffix {
+			m = mt.FindString(serverName)
+			if anti != nil && anti.MatchString(serverName) {
+				m = ""
+			}
+		}
+		if len(m) > 0 {
 			if len(m) > 1 {
 				slog.Warn(fmt.Sprintf("Server %s matches more than one pattern from dnsCircuit balancerTags/outboundTags(%v). skipped.",
-					subId, m))
+					serverName, m))
 				continue
 			}
-			tag := autoSetupOutboundPrefix + m[0] + ":" + serverName
-			antiPattern := antiSuffix[m[0]]
-			if antiPattern != nil && antiPattern.MatchString(serverName) {
-				continue
-			}
+			tag := autoSetupOutboundPrefix + m + ":" + serverName
 
 			var outboundJSON string
 			switch subItem.Protocol() {
