@@ -525,6 +525,9 @@ func (p *Patcher) prepareOutbounds() (err error) {
 			if anti != nil && anti.MatchString(serverName) {
 				m = ""
 			}
+			if m != "" {
+				break
+			}
 		}
 		if len(m) > 0 {
 			//if len(m) > 1 {
