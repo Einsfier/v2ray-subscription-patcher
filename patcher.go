@@ -455,12 +455,15 @@ func (p *Patcher) prepareObservatoryAndBalancers() error {
 		regionSuffix := strings.TrimPrefix(balancerTag, autoSetupBalancerPrefix)
 		suffixSplit := strings.Split(regionSuffix, "|")
 		sls := make([]string, 0, len(suffixSplit))
+		slsTrimed := make([]string, 0, len(suffixSplit))
 		for _, suffix := range suffixSplit {
 			if idx := strings.Index(suffix, "!"); idx != -1 {
 				suffix = suffix[:idx]
 			}
+			slsTrimed = append(slsTrimed, suffix)
 			sls = append(sls, fmt.Sprintf("\"%s%s:\"", autoSetupOutboundPrefix, suffix))
 		}
+		regionSuffixStripped := strings.Join(slsTrimed, "|")
 		outBoundSelector := strings.Join(sls, ", ")
 		// observatory
 		p.newObservers = append(p.newObservers,
@@ -477,7 +480,7 @@ func (p *Patcher) prepareObservatoryAndBalancers() error {
             "timeout": "5s"
           }
         }
-      }`, balancerTag, autoSetupObserverPrefix+regionSuffix, outBoundSelector)))
+      }`, balancerTag, autoSetupObserverPrefix+regionSuffixStripped, outBoundSelector)))
 		// balancers
 		fallbackTag := p.fallbackMap[balancerTag]
 		if len(fallbackTag) <= 0 {
@@ -500,8 +503,8 @@ func (p *Patcher) prepareObservatoryAndBalancers() error {
           }
         },
         "fallbackTag": "%s"
-      }`, balancerTag, autoSetupBalancerPrefix+regionSuffix, outBoundSelector,
-				autoSetupObserverPrefix+regionSuffix, fallbackTag)))
+      }`, balancerTag, autoSetupBalancerPrefix+regionSuffixStripped, outBoundSelector,
+				autoSetupObserverPrefix+regionSuffixStripped, fallbackTag)))
 	}
 	if addedCnt > 0 {
 		slog.Info(fmt.Sprintf("Preparing new observatories and balancers ... added %d auto-generated items", addedCnt))
