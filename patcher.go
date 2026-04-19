@@ -31,9 +31,10 @@ type Patcher struct {
 	// addr:port -> SubItem (all protocols)
 	ProxyServers map[string]*SubItem
 
-	dnsRtOutbounds          []string
-	dnsRtBalancers          []string
-	dnsRtAllRegionSuffix    map[string]struct{}
+	dnsRtOutbounds []string
+	dnsRtBalancers []string
+	// key -> anti pattern
+	dnsRtAllRegionSuffix    map[string]*regexp.Regexp
 	dnsRtAllRegionSuffixSlc []string
 
 	newOutbounds    []gjson.Result
@@ -171,18 +172,26 @@ func (p *Patcher) retrieveDnsRtTags() error {
 		return fmt.Errorf("no dnsCircuit outboundTags or balancerTags found in v2ray config")
 	}
 
-	p.dnsRtAllRegionSuffix = make(map[string]struct{})
+	p.dnsRtAllRegionSuffix = make(map[string]*regexp.Regexp)
 	for _, outTag := range p.dnsRtOutbounds {
 		if !strings.HasPrefix(outTag, autoSetupOutboundPrefix) {
 			continue
 		}
-		p.dnsRtAllRegionSuffix[strings.TrimPrefix(outTag, autoSetupOutboundPrefix)] = struct{}{}
+		if idx := strings.Index(outTag, "!"); idx > 0 && idx+1 <= len(outTag)-1 {
+			p.dnsRtAllRegionSuffix[strings.TrimPrefix(outTag[:idx], autoSetupOutboundPrefix)] = regexp.MustCompile(outTag[idx+1:])
+		} else {
+			p.dnsRtAllRegionSuffix[strings.TrimPrefix(outTag, autoSetupOutboundPrefix)] = nil
+		}
 	}
 	for _, balaTag := range p.dnsRtBalancers {
 		if !strings.HasPrefix(balaTag, autoSetupBalancerPrefix) {
 			continue
 		}
-		p.dnsRtAllRegionSuffix[strings.TrimPrefix(balaTag, autoSetupBalancerPrefix)] = struct{}{}
+		if idx := strings.Index(balaTag, "!"); idx > 0 && idx+1 <= len(balaTag)-1 {
+			p.dnsRtAllRegionSuffix[strings.TrimPrefix(balaTag[:idx], autoSetupOutboundPrefix)] = regexp.MustCompile(balaTag[idx+1:])
+		} else {
+			p.dnsRtAllRegionSuffix[strings.TrimPrefix(balaTag, autoSetupBalancerPrefix)] = nil
+		}
 	}
 	p.dnsRtAllRegionSuffixSlc = make([]string, 0, len(p.dnsRtAllRegionSuffix))
 	for region := range p.dnsRtAllRegionSuffix {
@@ -516,6 +525,10 @@ func (p *Patcher) prepareOutbounds() (err error) {
 				continue
 			}
 			tag := autoSetupOutboundPrefix + m[0] + ":" + serverName
+			antiPattern := p.dnsRtAllRegionSuffix[m[0]]
+			if antiPattern != nil && antiPattern.MatchString(serverName) {
+				continue
+			}
 
 			var outboundJSON string
 			switch subItem.Protocol() {
