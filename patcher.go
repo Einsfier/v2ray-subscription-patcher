@@ -500,7 +500,7 @@ func (p *Patcher) prepareObservatoryAndBalancers() error {
           }
         },
         "fallbackTag": "%s"
-      }`, balancerTag, balancerTag, outBoundSelector,
+      }`, autoSetupBalancerPrefix+regionSuffix, balancerTag, outBoundSelector,
 				autoSetupObserverPrefix+regionSuffix, fallbackTag)))
 	}
 	if addedCnt > 0 {
