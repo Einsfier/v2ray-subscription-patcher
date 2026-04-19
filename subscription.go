@@ -191,7 +191,7 @@ func (s *Subscription) CollectServerAddresses() (domains []string, ips []string)
 			continue
 		}
 
-		if tldPlus1 == addr {
+		if tldPlus1 == addr && strings.Count(tldPlus1, ".") == 1 {
 			// 顶级域名+1，使用 domain: 前缀
 			domainSet["domain:"+addr] = struct{}{}
 		} else {

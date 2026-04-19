@@ -1,11 +1,11 @@
 module github.com/povsister/v2ray-subscription-patcher
 
-go 1.23
+go 1.25.0
 
 require (
 	github.com/tidwall/gjson v1.18.0
 	github.com/tidwall/sjson v1.2.5
-	golang.org/x/net v0.31.0
+	golang.org/x/net v0.53.0
 )
 
 require (
