@@ -31,10 +31,9 @@ type Patcher struct {
 	// addr:port -> SubItem (all protocols)
 	ProxyServers map[string]*SubItem
 
-	dnsRtOutbounds []string
-	dnsRtBalancers []string
-	// key -> anti pattern
-	dnsRtAllRegionSuffix    map[string]*regexp.Regexp
+	dnsRtOutbounds          []string
+	dnsRtBalancers          []string
+	dnsRtAllRegionSuffix    map[string]struct{}
 	dnsRtAllRegionSuffixSlc []string
 
 	newOutbounds    []gjson.Result
@@ -172,26 +171,18 @@ func (p *Patcher) retrieveDnsRtTags() error {
 		return fmt.Errorf("no dnsCircuit outboundTags or balancerTags found in v2ray config")
 	}
 
-	p.dnsRtAllRegionSuffix = make(map[string]*regexp.Regexp)
+	p.dnsRtAllRegionSuffix = make(map[string]struct{})
 	for _, outTag := range p.dnsRtOutbounds {
 		if !strings.HasPrefix(outTag, autoSetupOutboundPrefix) {
 			continue
 		}
-		if idx := strings.Index(outTag, "!"); idx > 0 && idx+1 <= len(outTag)-1 {
-			p.dnsRtAllRegionSuffix[strings.TrimPrefix(outTag[:idx], autoSetupOutboundPrefix)] = regexp.MustCompile(outTag[idx+1:])
-		} else {
-			p.dnsRtAllRegionSuffix[strings.TrimPrefix(outTag, autoSetupOutboundPrefix)] = nil
-		}
+		p.dnsRtAllRegionSuffix[strings.TrimPrefix(outTag, autoSetupOutboundPrefix)] = struct{}{}
 	}
 	for _, balaTag := range p.dnsRtBalancers {
 		if !strings.HasPrefix(balaTag, autoSetupBalancerPrefix) {
 			continue
 		}
-		if idx := strings.Index(balaTag, "!"); idx > 0 && idx+1 <= len(balaTag)-1 {
-			p.dnsRtAllRegionSuffix[strings.TrimPrefix(balaTag[:idx], autoSetupOutboundPrefix)] = regexp.MustCompile(balaTag[idx+1:])
-		} else {
-			p.dnsRtAllRegionSuffix[strings.TrimPrefix(balaTag, autoSetupBalancerPrefix)] = nil
-		}
+		p.dnsRtAllRegionSuffix[strings.TrimPrefix(balaTag, autoSetupBalancerPrefix)] = struct{}{}
 	}
 	p.dnsRtAllRegionSuffixSlc = make([]string, 0, len(p.dnsRtAllRegionSuffix))
 	for region := range p.dnsRtAllRegionSuffix {
@@ -455,15 +446,12 @@ func (p *Patcher) prepareObservatoryAndBalancers() error {
 		regionSuffix := strings.TrimPrefix(balancerTag, autoSetupBalancerPrefix)
 		suffixSplit := strings.Split(regionSuffix, "|")
 		sls := make([]string, 0, len(suffixSplit))
-		slsTrimed := make([]string, 0, len(suffixSplit))
 		for _, suffix := range suffixSplit {
 			if idx := strings.Index(suffix, "!"); idx != -1 {
 				suffix = suffix[:idx]
 			}
-			slsTrimed = append(slsTrimed, suffix)
 			sls = append(sls, fmt.Sprintf("\"%s%s:\"", autoSetupOutboundPrefix, suffix))
 		}
-		regionSuffixStripped := strings.Join(slsTrimed, "|")
 		outBoundSelector := strings.Join(sls, ", ")
 		// observatory
 		p.newObservers = append(p.newObservers,
@@ -480,7 +468,7 @@ func (p *Patcher) prepareObservatoryAndBalancers() error {
             "timeout": "5s"
           }
         }
-      }`, balancerTag, autoSetupObserverPrefix+regionSuffixStripped, outBoundSelector)))
+      }`, balancerTag, autoSetupObserverPrefix+regionSuffix, outBoundSelector)))
 		// balancers
 		fallbackTag := p.fallbackMap[balancerTag]
 		if len(fallbackTag) <= 0 {
@@ -503,8 +491,8 @@ func (p *Patcher) prepareObservatoryAndBalancers() error {
           }
         },
         "fallbackTag": "%s"
-      }`, balancerTag, autoSetupBalancerPrefix+regionSuffixStripped, outBoundSelector,
-				autoSetupObserverPrefix+regionSuffixStripped, fallbackTag)))
+      }`, balancerTag, autoSetupBalancerPrefix+regionSuffix, outBoundSelector,
+				autoSetupObserverPrefix+regionSuffix, fallbackTag)))
 	}
 	if addedCnt > 0 {
 		slog.Info(fmt.Sprintf("Preparing new observatories and balancers ... added %d auto-generated items", addedCnt))
@@ -515,7 +503,20 @@ func (p *Patcher) prepareObservatoryAndBalancers() error {
 var suffixTrimer = regexp.MustCompile(`\s*\([^)]*\)\s*`)
 
 func (p *Patcher) prepareOutbounds() (err error) {
-	rgx, err := regexp.Compile(strings.Join(p.dnsRtAllRegionSuffixSlc, "|"))
+	var allSuffix []string
+	antiSuffix := make(map[string]*regexp.Regexp)
+	for _, rsf := range p.dnsRtAllRegionSuffixSlc {
+		for _, one := range strings.Split(rsf, "|") {
+			if idx := strings.Index(one, "!"); idx != -1 && idx+1 <= len(one)-1 {
+				allSuffix = append(allSuffix, one[:idx])
+				antiSuffix[one[:idx]] = regexp.MustCompile(one[idx+1:])
+			} else {
+				allSuffix = append(allSuffix, one)
+			}
+		}
+	}
+
+	rgx, err := regexp.Compile(strings.Join(allSuffix, "|"))
 	if err != nil {
 		return fmt.Errorf("failed to complie outbound matcher rgx: %w", err)
 	}
@@ -531,7 +532,7 @@ func (p *Patcher) prepareOutbounds() (err error) {
 				continue
 			}
 			tag := autoSetupOutboundPrefix + m[0] + ":" + serverName
-			antiPattern := p.dnsRtAllRegionSuffix[m[0]]
+			antiPattern := antiSuffix[m[0]]
 			if antiPattern != nil && antiPattern.MatchString(serverName) {
 				continue
 			}
