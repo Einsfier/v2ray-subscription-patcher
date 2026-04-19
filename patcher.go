@@ -527,11 +527,11 @@ func (p *Patcher) prepareOutbounds() (err error) {
 			}
 		}
 		if len(m) > 0 {
-			if len(m) > 1 {
-				slog.Warn(fmt.Sprintf("Server %s matches more than one pattern from dnsCircuit balancerTags/outboundTags(%v). skipped.",
-					serverName, m))
-				continue
-			}
+			//if len(m) > 1 {
+			//	slog.Warn(fmt.Sprintf("Server %s matches more than one pattern from dnsCircuit balancerTags/outboundTags(%v). skipped.",
+			//		serverName, m))
+			//	continue
+			//}
 			tag := autoSetupOutboundPrefix + m + ":" + serverName
 
 			var outboundJSON string
