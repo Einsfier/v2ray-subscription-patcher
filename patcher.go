@@ -624,10 +624,15 @@ func (p *Patcher) prepareOutbounds() (err error) {
         "enabled": true,
         "concurrency": 2,
         "xudpConcurrency": 2,
-        "xudpProxyUDP443": "allow"
+        "xudpProxyUDP443": %q
       }
     }`, tag, subId, c.Addr, c.Port, c.UUID, c.Flow,
-					c.Network, c.Security, fp, sni, c.PublicKey, c.SpiderX, c.ShortId)
+					c.Network, c.Security, fp, sni, c.PublicKey, c.SpiderX, c.ShortId, func() string {
+						if strings.Contains(c.Flow, "udp443") {
+							return "allow"
+						}
+						return "reject"
+					}())
 
 			case "hysteria2":
 				c := subItem.Hysteria2Conf
