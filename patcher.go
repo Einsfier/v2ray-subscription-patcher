@@ -18,11 +18,13 @@ import (
 var (
 	v2rayConfigPath string
 	panelDomain     string
+	mux             bool
 )
 
 func init() {
 	flag.StringVar(&v2rayConfigPath, "v2ray-config", "/usr/local/etc/v2ray/config.json", "v2ray jsonV4 config path")
 	flag.StringVar(&panelDomain, "paneldomain", "", "panel domain for DNS (required)")
+	flag.BoolVar(&mux, "mux", false, "mux enable or not")
 }
 
 type Patcher struct {
@@ -571,12 +573,17 @@ func (p *Patcher) prepareOutbounds() (err error) {
         }
       },
       "mux": {
-        "enabled": true,
+        "enabled": %s,
         "concurrency": 2,
         "xudpConcurrency": 2,
         "xudpProxyUDP443": "allow"
       }
-    }`, tag, subId, c.Addr, c.Port, c.UUID, "auto")
+    }`, tag, subId, c.Addr, c.Port, c.UUID, "auto", func() string {
+					if mux {
+						return "true"
+					}
+					return "false"
+				}())
 
 			case "vless":
 				c := subItem.VlessConf
@@ -621,13 +628,18 @@ func (p *Patcher) prepareOutbounds() (err error) {
         }
       },
       "mux": {
-        "enabled": true,
+        "enabled": %s,
         "concurrency": 2,
         "xudpConcurrency": 2,
         "xudpProxyUDP443": %q
       }
     }`, tag, subId, c.Addr, c.Port, c.UUID, c.Flow,
 					c.Network, c.Security, fp, sni, c.PublicKey, c.SpiderX, c.ShortId, func() string {
+						if mux {
+							return "true"
+						}
+						return "false"
+					}(), func() string {
 						if strings.Contains(c.Flow, "udp443") {
 							return "allow"
 						}
@@ -667,12 +679,17 @@ func (p *Patcher) prepareOutbounds() (err error) {
         }
       },
       "mux": {
-        "enabled": true,
+        "enabled": %s,
         "concurrency": 2,
         "xudpConcurrency": -1,
         "xudpProxyUDP443": "skip"
       }
-    }`, tag, subId, c.Addr, c.Port, c.SNI, insecureStr, c.Auth)
+    }`, tag, subId, c.Addr, c.Port, c.SNI, insecureStr, c.Auth, func() string {
+					if mux {
+						return "true"
+					}
+					return "false"
+				}())
 
 			default:
 				continue
