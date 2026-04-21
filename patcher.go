@@ -571,7 +571,10 @@ func (p *Patcher) prepareOutbounds() (err error) {
         }
       },
       "mux": {
-        "enabled": false
+        "enabled": true,
+        "concurrency": 2,
+		"xudpConcurrency": 2,
+		"xudpProxyUDP443": "allow"
       }
     }`, tag, subId, c.Addr, c.Port, c.UUID, "auto")
 
@@ -618,7 +621,10 @@ func (p *Patcher) prepareOutbounds() (err error) {
         }
       },
       "mux": {
-        "enabled": false
+        "enabled": true,
+        "concurrency": 2,
+		"xudpConcurrency": 2,
+		"xudpProxyUDP443": "allow"
       }
     }`, tag, subId, c.Addr, c.Port, c.UUID, c.Flow,
 					c.Network, c.Security, fp, sni, c.PublicKey, c.SpiderX, c.ShortId)
@@ -656,7 +662,10 @@ func (p *Patcher) prepareOutbounds() (err error) {
         }
       },
       "mux": {
-        "enabled": false
+        "enabled": true,
+        "concurrency": 2,
+		"xudpConcurrency": -1,
+		"xudpProxyUDP443": "skip"
       }
     }`, tag, subId, c.Addr, c.Port, c.SNI, insecureStr, c.Auth)
 
