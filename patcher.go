@@ -489,7 +489,7 @@ func (p *Patcher) prepareObservatoryAndBalancers() error {
             "maxRTT": "3s",
             "tolerance": 0.1, // 容忍节点探测百分之10失败率
             "baselines": ["100ms", "300ms", "600ms", "1s"],
-            "costs": [{"match":"extreme","value":0.8}]
+            "costs": [{"match":"电信","value":0.7}]
           }
         },
         "fallbackTag": "%s"
