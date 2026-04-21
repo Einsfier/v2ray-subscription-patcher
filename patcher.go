@@ -576,7 +576,7 @@ func (p *Patcher) prepareOutbounds() (err error) {
         "enabled": %s,
         "concurrency": 2,
         "xudpConcurrency": 2,
-        "xudpProxyUDP443": "allow"
+        "xudpProxyUDP443": "reject"
       }
     }`, tag, subId, c.Addr, c.Port, c.UUID, "auto", func() string {
 					if mux {
@@ -631,19 +631,17 @@ func (p *Patcher) prepareOutbounds() (err error) {
         "enabled": %s,
         "concurrency": 2,
         "xudpConcurrency": 2,
-        "xudpProxyUDP443": %q
+        "xudpProxyUDP443": "reject"
       }
     }`, tag, subId, c.Addr, c.Port, c.UUID, c.Flow,
 					c.Network, c.Security, fp, sni, c.PublicKey, c.SpiderX, c.ShortId, func() string {
 						if mux {
+							if strings.Contains(c.Flow, "vision") {
+								return "false"
+							}
 							return "true"
 						}
 						return "false"
-					}(), func() string {
-						if strings.Contains(c.Flow, "udp443") {
-							return "allow"
-						}
-						return "reject"
 					}())
 
 			case "hysteria2":
@@ -685,9 +683,9 @@ func (p *Patcher) prepareOutbounds() (err error) {
         "xudpProxyUDP443": "skip"
       }
     }`, tag, subId, c.Addr, c.Port, c.SNI, insecureStr, c.Auth, func() string {
-					if mux {
-						return "true"
-					}
+					//if mux {
+					//	return "true"
+					//}
 					return "false"
 				}())
 
