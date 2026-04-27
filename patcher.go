@@ -434,6 +434,33 @@ func (p *Patcher) prepareDirectConnectRules() error {
 	return nil
 }
 
+func splitTopLevel(s string) []string {
+	var result []string
+	runes := []rune(s)
+
+	start := 0
+	depth := 0
+
+	for i, ch := range runes {
+		switch ch {
+		case '(':
+			depth++
+		case ')':
+			if depth > 0 {
+				depth--
+			}
+		case '|':
+			if depth == 0 {
+				result = append(result, string(runes[start:i]))
+				start = i + 1
+			}
+		}
+	}
+
+	result = append(result, string(runes[start:]))
+	return result
+}
+
 func (p *Patcher) prepareObservatoryAndBalancers() error {
 	if len(p.dnsRtBalancers) <= 0 {
 		return nil
@@ -446,7 +473,7 @@ func (p *Patcher) prepareObservatoryAndBalancers() error {
 			continue
 		}
 		regionSuffix := strings.TrimPrefix(balancerTag, autoSetupBalancerPrefix)
-		suffixSplit := strings.Split(regionSuffix, "|")
+		suffixSplit := splitTopLevel(regionSuffix)
 		sls := make([]string, 0, len(suffixSplit))
 		for _, suffix := range suffixSplit {
 			if idx := strings.Index(suffix, "!"); idx != -1 {
@@ -486,10 +513,10 @@ func (p *Patcher) prepareObservatoryAndBalancers() error {
           "settings": {
             "observerTag": "%s",
             "expected": 2,
-            "maxRTT": "3s",
+            "maxRTT": "2s",
             "tolerance": 0.1, // 容忍节点探测百分之10失败率
-            "baselines": ["100ms", "300ms", "600ms", "1s"],
-            "costs": [{"match":"电信","value":0.7}]
+            "baselines": ["250ms", "400ms", "500ms", "1s"],
+            "costs": [{"match":"电信","value":0.7}, {"match":"直连","value":0.7}]
           }
         },
         "fallbackTag": "%s"
@@ -507,9 +534,9 @@ var suffixTrimer = regexp.MustCompile(`\s*\([^)]*\)\s*`)
 func (p *Patcher) prepareOutbounds() (err error) {
 	antiSuffix := make(map[*regexp.Regexp]*regexp.Regexp)
 	for _, rsf := range p.dnsRtAllRegionSuffixSlc {
-		for _, one := range strings.Split(rsf, "|") {
+		for _, one := range splitTopLevel(rsf) {
 			if idx := strings.Index(one, "!"); idx != -1 && idx+1 <= len(one)-1 {
-				antiSuffix[regexp.MustCompile(one[:idx])] = regexp.MustCompile(one[idx+1:])
+				antiSuffix[regexp.MustCompile(one[:idx])] = regexp.MustCompile(strings.Trim(one[idx+1:], "()"))
 			} else {
 				antiSuffix[regexp.MustCompile(one)] = nil
 			}
