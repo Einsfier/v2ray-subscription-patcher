@@ -2,12 +2,15 @@ package patcher
 
 import (
 	"bytes"
+	"crypto/rand"
+	"encoding/binary"
 	"flag"
 	"fmt"
 	"log/slog"
 	"os"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"unsafe"
 
@@ -529,6 +532,56 @@ func (p *Patcher) prepareObservatoryAndBalancers() error {
 	return nil
 }
 
+func testSeedStr(seed []uint32) string {
+	buf := &strings.Builder{}
+	buf.WriteByte('[')
+	for i, v := range seed {
+		if i > 0 && i != len(seed)-1 {
+			buf.WriteString(", ")
+		}
+		buf.WriteString(strconv.FormatUint(uint64(v), 10))
+	}
+	buf.WriteByte(']')
+	return buf.String()
+}
+
+// GenerateTestseed 生成随机 testseed，在减少填充流量的同时避免产生固定特征。
+// 每次调用返回不同的值，使得每条连接的填充行为不可预测。
+func generateTestseed() []uint32 {
+	seed := make([]uint32, 4)
+
+	// testseed[0]: 长填充触发阈值
+	// 适当降低阈值，使更多数据包走短填充路径以节省流量
+	// 但不能太低，否则 TLS 握手小包（~200-500字节）会缺少填充保护
+	seed[0] = randRange(550, 850)
+
+	// testseed[1]: 长填充随机上界
+	// 降低此值直接减少长填充的最大量，节省流量
+	seed[1] = randRange(200, 450)
+
+	// testseed[2]: 长填充基础值
+	// 需要保证 seed[2] > 典型 ClientHello 长度，才能有效填充
+	// 适度降低以减少流量，但不低于 500
+	seed[2] = randRange(500, 800)
+
+	// testseed[3]: 短填充随机上界
+	// 短填充用于大包，少量随机填充即可打破长度特征
+	seed[3] = randRange(80, 220)
+
+	return seed
+}
+
+// randRange 返回 [min, max] 范围内的随机 uint32
+func randRange(min, max uint32) uint32 {
+	var b [4]byte
+	_, err := rand.Read(b[:])
+	if err != nil {
+		panic(err)
+	}
+	n := binary.LittleEndian.Uint32(b[:])
+	return min + n%(max-min+1)
+}
+
 var suffixTrimer = regexp.MustCompile(`\s*\([^)]*\)\s*`)
 
 func (p *Patcher) prepareOutbounds() (err error) {
@@ -627,6 +680,8 @@ func (p *Patcher) prepareOutbounds() (err error) {
       "tag": "%s", // Auto-Generated from %s
       "protocol": "vless",
       "settings": {
+        "testpre": 2, // 维持2个预连接
+        "testseed": %s,
         "vnext": [{
           "address": "%s",
           "port": %d,
@@ -651,6 +706,7 @@ func (p *Patcher) prepareOutbounds() (err error) {
         },
         "sockopt": {
           "domainStrategy": "UseIP",
+          "tcpMptcp": true,
           "mark": 255
         }
       },
@@ -660,7 +716,7 @@ func (p *Patcher) prepareOutbounds() (err error) {
         "xudpConcurrency": 2,
         "xudpProxyUDP443": "reject"
       }
-    }`, tag, subId, c.Addr, c.Port, c.UUID, c.Flow,
+    }`, tag, subId, testSeedStr(generateTestseed()), c.Addr, c.Port, c.UUID, c.Flow,
 					c.Network, c.Security, fp, sni, c.PublicKey, c.SpiderX, c.ShortId, func() string {
 						if mux {
 							if strings.Contains(c.Flow, "vision") {
