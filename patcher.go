@@ -536,7 +536,7 @@ func testSeedStr(seed []uint32) string {
 	buf := &strings.Builder{}
 	buf.WriteByte('[')
 	for i, v := range seed {
-		if i > 0 && i != len(seed)-1 {
+		if i > 0 {
 			buf.WriteString(", ")
 		}
 		buf.WriteString(strconv.FormatUint(uint64(v), 10))
