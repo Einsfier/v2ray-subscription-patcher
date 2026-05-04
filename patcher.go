@@ -469,7 +469,9 @@ func (p *Patcher) prepareObservatoryAndBalancers() error {
 		return nil
 	}
 	var (
-		addedCnt int
+		addedCnt        int
+		allSuffixes     []string
+		allRegionSuffix []string
 	)
 	for _, balancerTag := range p.dnsRtBalancers {
 		if !strings.HasPrefix(balancerTag, autoSetupBalancerPrefix) {
@@ -484,23 +486,9 @@ func (p *Patcher) prepareObservatoryAndBalancers() error {
 			}
 			sls = append(sls, fmt.Sprintf("\"%s%s:\"", autoSetupOutboundPrefix, suffix))
 		}
+		allRegionSuffix = append(allRegionSuffix, regionSuffix)
+		allSuffixes = append(allSuffixes, sls...)
 		outBoundSelector := strings.Join(sls, ", ")
-		// observatory
-		p.newObservers = append(p.newObservers,
-			gjson.Parse(fmt.Sprintf(`      { // Auto-generated from dnsCircuit.balancerTag = %s
-        "type": "burst",
-        "tag": "%s",
-        "settings": {
-          "subjectSelector": [%s],
-          "pingConfig": {
-            "destination": "https://www.gstatic.com/generate_204",
-            "interval": "15s",
-            "sampling": 20,
-            // "httpMethod": "GET",
-            "timeout": "5s"
-          }
-        }
-      }`, balancerTag, autoSetupObserverPrefix+regionSuffix, outBoundSelector)))
 		// balancers
 		fallbackTag := p.fallbackMap[balancerTag]
 		if len(fallbackTag) <= 0 {
@@ -524,7 +512,25 @@ func (p *Patcher) prepareObservatoryAndBalancers() error {
         },
         "fallbackTag": "%s"
       }`, balancerTag, autoSetupBalancerPrefix+regionSuffix, outBoundSelector,
-				autoSetupObserverPrefix+regionSuffix, fallbackTag)))
+				autoSetupObserverPrefix+"all-generated", fallbackTag)))
+	}
+	if len(allSuffixes) > 0 {
+		// observatory
+		p.newObservers = append(p.newObservers,
+			gjson.Parse(fmt.Sprintf(`      { // Auto-generated from dnsCircuit.balancerTag = %s
+        "type": "burst",
+        "tag": "%s",
+        "settings": {
+          "subjectSelector": [%s],
+          "pingConfig": {
+            "destination": "https://www.gstatic.com/generate_204",
+            "interval": "5s",
+            "sampling": 25,
+            // "httpMethod": "GET",
+            "timeout": "3s"
+          }
+        }
+      }`, strings.Join(allRegionSuffix, ", "), autoSetupObserverPrefix+"all-generated", strings.Join(allSuffixes, ", "))))
 	}
 	if addedCnt > 0 {
 		slog.Info(fmt.Sprintf("Preparing new observatories and balancers ... added %d auto-generated items", addedCnt))
