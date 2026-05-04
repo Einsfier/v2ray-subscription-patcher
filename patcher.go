@@ -503,10 +503,10 @@ func (p *Patcher) prepareObservatoryAndBalancers() error {
           "type": "leastload",
           "settings": {
             "observerTag": "%s",
-            "expected": 2,
+            "expected": 3,
             "maxRTT": "2s",
             "tolerance": 0.1, // 容忍节点探测百分之10失败率
-            "baselines": ["250ms", "400ms", "500ms", "1s"],
+            "baselines": ["30ms", "50ms", "100ms", "150ms", "200ms", "300ms"],
             "costs": [{"match":"电信","value":0.7}, {"match":"直连","value":0.7}]
           }
         },
