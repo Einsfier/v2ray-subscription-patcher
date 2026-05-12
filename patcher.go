@@ -524,7 +524,7 @@ func (p *Patcher) prepareObservatoryAndBalancers() error {
           "subjectSelector": [%s],
           "pingConfig": {
             "destination": "https://www.gstatic.com/generate_204",
-            "interval": "12s",
+            "interval": "30s",
             "sampling": 30,
             // "httpMethod": "GET",
             "timeout": "3s"
