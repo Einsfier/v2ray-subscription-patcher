@@ -470,7 +470,7 @@ func (p *Patcher) prepareObservatoryAndBalancers() error {
 	}
 	var (
 		addedCnt        int
-		allSuffixes     []string
+		allSuffixesUniq = make(map[string]struct{})
 		allRegionSuffix []string
 	)
 	for _, balancerTag := range p.dnsRtBalancers {
@@ -487,7 +487,9 @@ func (p *Patcher) prepareObservatoryAndBalancers() error {
 			sls = append(sls, fmt.Sprintf("\"%s%s:\"", autoSetupOutboundPrefix, suffix))
 		}
 		allRegionSuffix = append(allRegionSuffix, regionSuffix)
-		allSuffixes = append(allSuffixes, sls...)
+		for _, sl := range sls {
+			allSuffixesUniq[sl] = struct{}{}
+		}
 		outBoundSelector := strings.Join(sls, ", ")
 		// balancers
 		fallbackTag := p.fallbackMap[balancerTag]
@@ -514,7 +516,7 @@ func (p *Patcher) prepareObservatoryAndBalancers() error {
       }`, balancerTag, autoSetupBalancerPrefix+regionSuffix, outBoundSelector,
 				autoSetupObserverPrefix+"all-generated", fallbackTag)))
 	}
-	if len(allSuffixes) > 0 {
+	if len(allSuffixesUniq) > 0 {
 		// observatory
 		p.newObservers = append(p.newObservers,
 			gjson.Parse(fmt.Sprintf(`      { // Auto-generated from dnsCircuit.balancerTag = %s
@@ -530,7 +532,14 @@ func (p *Patcher) prepareObservatoryAndBalancers() error {
             "timeout": "3s"
           }
         }
-      }`, strings.Join(allRegionSuffix, ", "), autoSetupObserverPrefix+"all-generated", strings.Join(allSuffixes, ", "))))
+      }`, strings.Join(allRegionSuffix, ", "), autoSetupObserverPrefix+"all-generated", strings.Join(func() []string {
+				sls := make([]string, 0, len(allSuffixesUniq))
+				for suffix := range allSuffixesUniq {
+					sls = append(sls, suffix)
+				}
+				slices.Sort(sls)
+				return sls
+			}(), ", "))))
 	}
 	if addedCnt > 0 {
 		slog.Info(fmt.Sprintf("Preparing new observatories and balancers ... added %d auto-generated items", addedCnt))
