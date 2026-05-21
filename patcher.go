@@ -599,15 +599,46 @@ func randRange(min, max uint32) uint32 {
 
 var suffixTrimer = regexp.MustCompile(`\s*\([^)]*\)\s*`)
 
+type nodeFilter struct {
+	pattern *regexp.Regexp
+	filter  *regexp.Regexp // 正向精细过滤，pattern命中后还需匹配filter才算通过
+	anti    *regexp.Regexp // 反向排除
+}
+
+// parseNodeFilter 解析 "pattern&filter!anti" 语法
+// 支持组合: pattern / pattern&filter / pattern!anti / pattern&filter!anti
+func parseNodeFilter(expr string) nodeFilter {
+	var patternPart, filterPart, antiPart string
+
+	// 先按 ! 分割出 antipattern
+	if idx := strings.Index(expr, "!"); idx != -1 && idx+1 <= len(expr)-1 {
+		patternPart = expr[:idx]
+		antiPart = strings.Trim(expr[idx+1:], "()")
+	} else {
+		patternPart = expr
+	}
+
+	// 再按 & 分割出 filter
+	if idx := strings.Index(patternPart, "&"); idx != -1 && idx+1 <= len(patternPart)-1 {
+		filterPart = strings.Trim(patternPart[idx+1:], "()")
+		patternPart = patternPart[:idx]
+	}
+
+	nf := nodeFilter{pattern: regexp.MustCompile(patternPart)}
+	if filterPart != "" {
+		nf.filter = regexp.MustCompile(filterPart)
+	}
+	if antiPart != "" {
+		nf.anti = regexp.MustCompile(antiPart)
+	}
+	return nf
+}
+
 func (p *Patcher) prepareOutbounds() (err error) {
-	antiSuffix := make(map[*regexp.Regexp]*regexp.Regexp)
+	var filters []nodeFilter
 	for _, rsf := range p.dnsRtAllRegionSuffixSlc {
 		for _, one := range splitTopLevel(rsf) {
-			if idx := strings.Index(one, "!"); idx != -1 && idx+1 <= len(one)-1 {
-				antiSuffix[regexp.MustCompile(one[:idx])] = regexp.MustCompile(strings.Trim(one[idx+1:], "()"))
-			} else {
-				antiSuffix[regexp.MustCompile(one)] = nil
-			}
+			filters = append(filters, parseNodeFilter(one))
 		}
 	}
 
@@ -617,14 +648,20 @@ func (p *Patcher) prepareOutbounds() (err error) {
 	for subId, subItem := range p.ProxyServers {
 		serverName := strings.ToLower(strings.ReplaceAll(suffixTrimer.ReplaceAllString(subItem.ServerNameLabel(), ""), " ", "-"))
 		var m string
-		for mt, anti := range antiSuffix {
-			m = mt.FindString(serverName)
-			if anti != nil && anti.MatchString(serverName) {
+		for _, nf := range filters {
+			m = nf.pattern.FindString(serverName)
+			if m == "" {
+				continue
+			}
+			if nf.filter != nil && !nf.filter.MatchString(serverName) {
 				m = ""
+				continue
 			}
-			if m != "" {
-				break
+			if nf.anti != nil && nf.anti.MatchString(serverName) {
+				m = ""
+				continue
 			}
+			break
 		}
 		if len(m) > 0 {
 			//if len(m) > 1 {
