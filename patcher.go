@@ -22,12 +22,25 @@ var (
 	v2rayConfigPath string
 	panelDomain     string
 	mux             bool
+	balancerCosts   costFlags
 )
+
+type costFlags []string
+
+func (c *costFlags) String() string { return strings.Join(*c, ", ") }
+func (c *costFlags) Set(val string) error {
+	if !strings.Contains(val, ":") {
+		return fmt.Errorf("cost format must be match:value, got %q", val)
+	}
+	*c = append(*c, val)
+	return nil
+}
 
 func init() {
 	flag.StringVar(&v2rayConfigPath, "v2ray-config", "/usr/local/etc/v2ray/config.json", "v2ray jsonV4 config path")
 	flag.StringVar(&panelDomain, "paneldomain", "", "panel domain for DNS (required)")
 	flag.BoolVar(&mux, "mux", false, "mux enable or not")
+	flag.Var(&balancerCosts, "cost", `balancer cost entry, format "match:value" (can be specified multiple times)`)
 }
 
 type Patcher struct {
@@ -57,6 +70,20 @@ type Patcher struct {
 
 func GetPanelDomain() string {
 	return panelDomain
+}
+
+func buildCostsJSON() string {
+	if len(balancerCosts) == 0 {
+		return "[]"
+	}
+	entries := make([]string, 0, len(balancerCosts))
+	for _, c := range balancerCosts {
+		idx := strings.LastIndex(c, ":")
+		match := c[:idx]
+		value := c[idx+1:]
+		entries = append(entries, fmt.Sprintf(`{"match":%q,"value":%s}`, match, value))
+	}
+	return "[" + strings.Join(entries, ", ") + "]"
 }
 
 func NewPatcher() *Patcher {
@@ -484,6 +511,9 @@ func (p *Patcher) prepareObservatoryAndBalancers() error {
 			if idx := strings.Index(suffix, "!"); idx != -1 {
 				suffix = suffix[:idx]
 			}
+			if idx := strings.Index(suffix, "&"); idx != -1 {
+				suffix = suffix[:idx]
+			}
 			sls = append(sls, fmt.Sprintf("\"%s%s:\"", autoSetupOutboundPrefix, suffix))
 		}
 		allRegionSuffix = append(allRegionSuffix, regionSuffix)
@@ -509,12 +539,12 @@ func (p *Patcher) prepareObservatoryAndBalancers() error {
             "maxRTT": "2s",
             "tolerance": 0.1, // 容忍节点探测百分之10失败率
             "baselines": ["30ms", "50ms", "100ms", "150ms", "200ms", "300ms"],
-            "costs": [{"match":"电信","value":0.7}, {"match":"直连","value":0.7}]
+            "costs": %s
           }
         },
         "fallbackTag": "%s"
       }`, balancerTag, autoSetupBalancerPrefix+regionSuffix, outBoundSelector,
-				autoSetupObserverPrefix+"all-generated", fallbackTag)))
+				autoSetupObserverPrefix+"all-generated", buildCostsJSON(), fallbackTag)))
 	}
 	if len(allSuffixesUniq) > 0 {
 		// observatory
