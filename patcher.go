@@ -23,6 +23,7 @@ var (
 	panelDomain     string
 	mux             bool
 	balancerCosts   costFlags
+	tolerance       float64
 )
 
 type costFlags []string
@@ -41,6 +42,7 @@ func init() {
 	flag.StringVar(&panelDomain, "paneldomain", "", "panel domain for DNS (required)")
 	flag.BoolVar(&mux, "mux", false, "mux enable or not")
 	flag.Var(&balancerCosts, "cost", `balancer cost entry, format "match:value" (can be specified multiple times)`)
+	flag.Float64Var(&tolerance, "tolerance", 0.1, "balancer leastload tolerance (0.0~1.0)")
 }
 
 type Patcher struct {
@@ -537,14 +539,14 @@ func (p *Patcher) prepareObservatoryAndBalancers() error {
             "observerTag": "%s",
             "expected": 3,
             "maxRTT": "2s",
-            "tolerance": 0.1, // 容忍节点探测百分之10失败率
+            "tolerance": %v,
             "baselines": ["30ms", "50ms", "100ms", "150ms", "200ms", "300ms"],
             "costs": %s
           }
         },
         "fallbackTag": "%s"
       }`, balancerTag, autoSetupBalancerPrefix+regionSuffix, outBoundSelector,
-				autoSetupObserverPrefix+"all-generated", buildCostsJSON(), fallbackTag)))
+				autoSetupObserverPrefix+"all-generated", tolerance, buildCostsJSON(), fallbackTag)))
 	}
 	if len(allSuffixesUniq) > 0 {
 		// observatory
